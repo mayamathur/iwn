@@ -30,12 +30,7 @@ The [key scripts](https://github.com/mayamathur/iwn/tree/main/simulation_study) 
 
 - `prep_sims_IWN.R` takes `agg.csv` described above and does variable manipulations to facilitate analysis. 
 
-
-## How to reproduce the simulation analyses from our saved results
-
-Open the R project `Simulation code.Rproj`. All analyses, results tables, and plots can be generated using `analyze_sims_IWN.R`. Each table is printed in LaTeX code that was copied straight into the manuscript. This code also uses the function `update_result_csv()` to write each numerical result that appears in the body of the manuscript into the file `stats_for_paper.csv`. This is so that results can be piped straight into the manuscript, and the code file explains how you can generate this file locally by choosing a local directory.
-
-This script calls helper functions in `analyze_sims_helper_IWN.R` and works with the dataset `agg.csv` described above. 
+- `analyze_sims_IWN.R` generates all analyses, results tables, and plots. Each table is printed in LaTeX code that was copied straight into the manuscript. This script calls helper functions in `analyze_sims_helper_IWN.R` and works with the dataset `agg.csv` described above. 
 
 
 
