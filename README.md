@@ -2,9 +2,10 @@
  
 This repository contains all code required to reproduce the applied example and simulation studies reported in:
 
-*Mathur MB & Shpitser I (under review). Imputation without nightMARs: Graphical criteria for valid imputation of missing data. Preprint available at [https://osf.io/preprints/osf/zqne9](https://osf.io/preprints/osf/zqne9).*
+*Mathur MB, Zhang W, Shpitser I (under review). Imputation without nightMARs: Graphical criteria for valid imputation of missing data. Preprint available at [https://osf.io/preprints/osf/zqne9](https://osf.io/preprints/osf/zqne9).*
 
-The code is also version-controlled on Github: [simulation study](https://github.com/mayamathur/iwn_sims/), [supplementary applied example](https://github.com/mayamathur/iwn_applied/).
+## How to reproduce the applied example (sexual identity)
+
 
 
 ## How to reproduce the supplementary applied example
