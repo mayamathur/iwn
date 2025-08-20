@@ -1,0 +1,1806 @@
+
+expit = function(p) exp(p) / (1 + exp(p))
+logit = function(p) p / (1-p)
+
+
+
+
+
+# DATA-GENERATION FNS ---------------------
+
+sim_data = function(.p) {
+  
+  if (.p$model != "OLS" ) stop("Only handles model OLS for now")
+  
+  # ~ DAG 1B (= DAG (a) in paper) -----------------------------
+  # RA-A collider
+  
+  if ( .p$dag_name == "1B" ) {
+    du = data.frame( U1 = rnorm( n = .p$N ),
+                     U2 = rnorm( n = .p$N ),
+                     C1 = rnorm( n = .p$N ) )  # only including this because neither imputation method runs with 1 variable
+    
+    coef1 = 2
+    
+    du = du %>% rowwise() %>%
+      mutate( A1 = rnorm( n = 1,
+                          mean = coef1*U1 ),
+              
+              B1 = rnorm( n = 1,
+                          #mean = coef1*A1 + coef1*U1 + coef1*U2 ), #@TEMP ONLY 2023-08-22
+                          mean = 3*U1 + 3*U2 ),
+              
+              RA = rbinom( n = 1,
+                           prob = expit(3*U2),
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = B1,
+              C = C1)
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(B, C, A)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      # regression strings
+      form_string = "A ~ 1"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "A1 ~ 1"
+      
+      beta = 0
+      
+      di_ours = du %>% select(C, A) 
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "B"
+    }
+    
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      
+      # regression strings
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = NA
+      
+      di_ours = NULL  # m-backdoor violated
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = NULL # B is in target law
+    }
+    
+  }  # end of .p$dag_name == "1B"
+  
+  
+  # ~ DAG 1D (= DAG (b) in paper) -----------------------------
+  # similar to 1B, but now B has its own missingness, so restricting
+  #  the dataset to exclude it from imputation doesn't work
+  
+  if ( .p$dag_name == "1D" ) {
+    
+    du = data.frame( U1 = rnorm( n = .p$N ),
+                     U2 = rnorm( n = .p$N ),
+                     C1 = rnorm( n = .p$N ) )
+    
+    coef1 = 2
+    
+    du = du %>% rowwise() %>%
+      mutate( A1 = rnorm( n = 1,
+                          mean = coef1*U1 ),
+              
+              B1 = rnorm( n = 1,
+                          mean = coef1*U1 + coef1*U2 ),
+              
+              RA = rbinom( n = 1,
+                           prob = expit(3*U2),
+                           size = 1 ),
+              RB = rbinom( n = 1,
+                           prob = 0.9,  # 10% missing
+                           size = 1 ),
+              #*interestingly, intercept of A less biased for standard MI methods when there is MORE missingness on B
+              #  I guess this is because it plays less role in imputation model?
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = ifelse(RB == 0, NA, B1),
+              C = C1)
+    
+    
+    # cor(du %>% select(A1, B1, C1))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      
+      # regression strings
+      form_string = "A ~ 1"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "A1 ~ 1"
+      
+      beta = 0
+      
+      # and for our imputation
+      di_ours = du %>% select(A, C)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "B"
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      
+      # regression strings
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = NA
+      
+      # and for our imputation
+      di_ours = NULL
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = NULL
+    }
+    
+  }  # end of .p$dag_name == "1D"
+  
+  
+  
+  
+  
+  # ~ DAG 1I -----------------------------
+  # similar to 1D, but variable B1 is a forking variable on an m-backdoor path
+  
+  if ( .p$dag_name == "1I" ) {
+    
+    du = data.frame( A1 = rnorm( n = .p$N ),
+                     C1 = rnorm( n = .p$N ) )
+    
+    coef1 = 2
+
+    du = du %>% rowwise() %>%
+      mutate( 
+        B1 = rnorm( n = 1,
+                    mean = coef1*A1 ),
+        
+        RA = rbinom( n = 1,
+                     prob = expit(3*B1),
+                     size = 1 ),
+        RB = rbinom( n = 1,
+                     prob = 0.5,  # this is 1-proportion missing
+                     size = 1 ),
+        
+        A = ifelse(RA == 0, NA, A1),
+        B = ifelse(RB == 0, NA, B1),
+        C = C1)
+    
+    
+    # cor(du %>% select(A1, B1, C1))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      
+      # regression strings
+      form_string = "A ~ 1"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "A1 ~ 1"
+      
+      beta = 0
+      
+      # and for our imputation
+      di_ours = du %>% select(A, C)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "B"
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      
+      # regression strings
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      # and for our imputation
+      di_ours = NULL
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = NULL
+    }
+    
+  }  # end of .p$dag_name == "1D"
+  
+  
+  
+  
+  
+  
+  # ~ DAG 1G (Type-D) -----------------------------
+  
+  if ( .p$dag_name == "1G" ) {
+    
+    du = data.frame( U1 = rnorm( n = .p$N ),
+                     U2 = rnorm( n = .p$N ) )
+    
+    #coef1 = 2 # as in 2023-08-21 sims, where MICE unexpected performed badly
+    coef1 = 1
+    
+    du = du %>% rowwise() %>%
+      mutate( A1 = rnorm( n = 1,
+                          mean = coef1*U1 ),
+              
+              D1 = rnorm( n = 1,
+                          mean = coef1*U1 + coef1*U2 ),
+              
+              B1 = rnorm( n = 1,
+                          mean = coef1*A1 ),
+              
+              C1 = rnorm( n = 1,
+                          mean = (coef1/2)*B1 ),
+              
+              RA = rbinom( n = 1,
+                           prob = expit(1*C1 + 1*U2), #@2023-08-23 - these coefs result in low correlations between RA and C1, U2
+                           size = 1 ),
+              RB = rbinom( n = 1,
+                           prob = 1, # NOT MISSING to avoid unblockable m-bd path
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = ifelse(RB == 0, NA, B1),
+              C = C1,
+              D = D1)
+    
+    #cor(du %>% select(A,B,C,D))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C, D)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      stop("Intercept not implemented for this DAG")
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      # and for our imputation
+      di_ours = du %>% select(A, B, C)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "D"
+    }
+    
+  }  # end of .p$dag_name == "1G"
+  
+  # ~ DAG 1Gb (Type-D) -----------------------------
+  
+  if ( .p$dag_name == "1Gb" ) {
+    
+    du = data.frame( U1 = rnorm( n = .p$N ),
+                     U2 = rnorm( n = .p$N ),
+                     U3 = rnorm( n = .p$N ) )
+    
+    #coef1 = 2 # as in 2023-08-21 sims, where MICE unexpected performed badly
+    coef1 = 1
+
+    
+    # 2023-08-23 - experiments
+    du = du %>% rowwise() %>%
+      mutate( A1 = rnorm( n = 1,
+                          mean = coef1*U1 ),
+              
+              D1 = rnorm( n = 1,
+                          mean = coef1*U1 + coef1*U2 ),
+              
+              B1 = rnorm( n = 1,
+                          mean = coef1*A1 + 2*U3  ),
+              
+              C1 = rnorm( n = 1,
+                          mean = (coef1/2)*B1 ),
+              
+              RA = rbinom( n = 1,
+                           prob = expit(3*C1 + 3*U2), # increased these 2023-08-23
+                           size = 1 ),
+              RB = rbinom( n = 1,
+                           prob = 1, # NOT MISSING to avoid unblockable m-bd path
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = ifelse(RB == 0, NA, B1),
+              C = C1,
+              D = D1)
+    
+    
+    #cor(du %>% select(A,B,C,D))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C, D)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      stop("Intercept not implemented for this DAG")
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      # and for our imputation
+      di_ours = du %>% select(A, B, C)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "D"
+    }
+    
+  }  # end of .p$dag_name == "1G"
+  
+  # ~ DAG 1F (Type-D) -----------------------------
+  
+  if ( .p$dag_name == "1F" ) {
+    
+    du = data.frame( U1 = rnorm( n = .p$N ),
+                     U2 = rnorm( n = .p$N ) )
+    
+    #coef1 = 2 # as in 2023-08-21 sims, where MICE unexpected performed badly
+    coef1 = 1
+    
+    du = du %>% rowwise() %>%
+      mutate( A1 = rnorm( n = 1,
+                          mean = coef1*U1 ),
+              
+              D1 = rnorm( n = 1,
+                          mean = coef1*U1 + coef1*U2 ),
+              
+              B1 = rnorm( n = 1,
+                          mean = coef1*A1 ),
+              
+              C1 = rnorm( n = 1,
+                          mean = (coef1/2)*B1 ),
+              
+              RA = rbinom( n = 1,
+                           prob = 1, # not missing
+                           size = 1 ),
+              RB = rbinom( n = 1,
+                           prob = expit(1*C1 + 1*U2), 
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = ifelse(RB == 0, NA, B1),
+              C = C1,
+              D = D1)
+    
+    
+    #cor(du %>% select(A,B,C,D))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C, D)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      stop("Intercept not implemented for this DAG")
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      # and for our imputation
+      di_ours = du %>% select(A, B, C)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "D"
+    }
+    
+  }  # end of .p$dag_name == "1F"
+  
+  
+  
+  # ~ DAG 1Fb (= DAG (c) in paper) -----------------------------
+  # Ilya's suggestion
+  # Type-D
+
+  if ( .p$dag_name == "1Fb" ) {
+    
+    du = data.frame( U1 = rnorm( n = .p$N ),
+                     U2 = rnorm( n = .p$N ),
+                     A1 = rnorm( n = .p$N ) )
+    
+    coef1 = 1.5
+    
+    du = du %>% rowwise() %>%
+      mutate( D1 = rnorm( n = 1,
+                          mean = coef1*U1 + coef1*U2 ),
+              
+              B1 = rnorm( n = 1,
+                          mean = coef1*A1 + coef1*U1 ),
+              
+              RA = rbinom( n = 1,
+                           prob = 1, # not missing
+                           size = 1 ),
+              RB = rbinom( n = 1,
+                           prob = expit(1*A1 + 1*U2), 
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = ifelse(RB == 0, NA, B1),
+              D = D1)
+    
+     
+    #cor(du %>% select(A,B,C,D))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, D)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      form_string = "B ~ 1"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ 1"
+      
+      beta = 0
+      
+      # and for our imputation
+      di_ours = du %>% select(A, B)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "D"
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      # and for our imputation
+      di_ours = du %>% select(A, B)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "D"
+    }
+    
+  }  # end of .p$dag_name == "1Fb"
+  
+  
+  
+  
+  # ~ DAG 1H (Type-M) -----------------------------
+  
+  if ( .p$dag_name == "1H" ) {
+    
+    du = data.frame( A1 = rnorm( n = .p$N ) )
+    
+    coef1 = 1
+    #coef1 = 2  # as in 2023-08-21 sims, where MICE unexpected performed badly
+    
+    du = du %>% rowwise() %>%
+      mutate( C1 = rnorm( n = 1,
+                          mean = coef1*A1 ),
+              
+              B1 = rnorm( n = 1,
+                          # coef1 is the direct effect of A1
+                          mean = coef1*C1 + coef1*A1 ),
+              
+              RB = rbinom( n = 1,
+                           prob = expit(1*C1), 
+                           size = 1 ),
+              
+              A = A1,
+              B = ifelse(RB == 0, NA, B1),
+              C = C1)
+    
+    #cor(du %>% select(A1, B1, C1))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      stop("Intercept not implemented for this DAG")
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      # regression strings
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1^2 + coef1  # mediation total effect
+      
+      # and for our imputation
+      di_ours = NULL  # same as std imputation
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = NULL
+    }
+    
+  }  # end of .p$dag_name == "1H"
+  
+  
+  # ~ DAG 1J (= DAG (d) in paper; only in supplement) -----------------------------
+  
+  # file-matching on 2 confounders
+  if ( .p$dag_name == "1J" ) {
+    
+    du = data.frame( C1 = rnorm( n = .p$N ) )
+    
+    coefAB = 0
+    coefCD = 1
+    coef1 = 0.25
+    
+    du = du %>% rowwise() %>%
+      mutate( D1 = rnorm( n = 1,  # second confounder
+                          mean = coefCD*C1 ),  # associated with C1
+              
+              A1 = rnorm( n = 1,
+                          mean = coef1*C1 + coef1*D1 ),
+              
+              B1 = rnorm( n = 1,
+                          mean = coefAB*A1 + coef1*C1 + coef1*D1 ) )
+
+    # for file-matching, need to impose missingness a little differently
+    # randomly assign each row to a pattern
+    patterns = c(1,2)
+    du$pattern = sample(patterns, size = nrow(du), replace = TRUE)
+    
+    du = du %>% rowwise %>%
+      mutate( RA = rbinom( n = 1,
+                      prob = 1,  # A is never missing 
+                      size = 1 ),
+              RB = rbinom( n = 1,
+                      prob = 1, # B is never missing
+                      size = 1 ),
+              
+              # observed only for pattern 1
+              RC = ifelse( pattern == 1, 1, 0),
+              
+              # observed only for pattern 2
+              RD = ifelse( pattern == 2, 1, 0),
+              
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = ifelse(RB == 0, NA, B1),
+              C = ifelse(RC == 0, NA, C1),
+              D = ifelse(RD == 0, NA, D1) )
+    
+    # remove pattern indicator
+    du = du %>% select( -pattern )
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C, D)
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      stop("Intercept not implemented for this DAG")
+    }
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      # regression strings
+      form_string = "B ~ A + C + D"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1 + C1 + D1"
+      
+      beta = coefAB  
+      
+      # and for our imputation
+      di_ours = NULL  # same as std imputation
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = NULL
+    }
+    
+  }  # end of .p$dag_name == "1J"
+  
+
+  # ~ DAG 1K (EMM to illustrate different analysis laws) -----------------------------
+  
+  if ( .p$dag_name == "1K" ) {
+    
+    du = data.frame( C1 = rnorm( n = .p$N ),  # EMM
+                     A1 = rnorm( n = .p$N ) )
+    
+    coef1 = 2
+    
+    du = du %>% rowwise() %>%
+      mutate( 
+              B1 = rnorm( n = 1,
+                          mean = coef1*C1 + coef1*A1 + coef1*C1*A1 ),
+              
+              
+              RA = rbinom( n = 1,
+                           prob = 0.5, # this variable is MCAR
+                           size = 1 ),
+              RB = rbinom( n = 1,
+                           prob = 0.5, # this variable is MCAR
+                           size = 1 ),
+              
+              RC = rbinom( n = 1,
+                           prob = expit(2*C1),
+                           size = 1 ),
+              A = ifelse(RA == 0, NA, A1),
+              B = ifelse(RB == 0, NA, B1),
+              C = ifelse(RC == 0, NA, C1) )
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, B, C)
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      stop("Intercept not implemented for this DAG")
+    }
+    
+    ### For the A-B association without including the EMM
+    if ( .p$coef_of_interest == "A" ){ 
+      # regression strings
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      # and for our imputation
+      di_ours = du %>% select(A, B)
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = c("C")
+    }
+    
+    ### For the EMM coefficient
+    if ( .p$coef_of_interest == "A:C" ){ 
+      # regression strings
+      form_string = "B ~ A*C"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1*C1"
+      
+      beta = coef1
+      
+      # and for our imputation
+      di_ours = NULL
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = NULL
+    }
+    
+  }  # end of .p$dag_name == "1K"
+  
+  
+  
+  
+  # ~ Finish generating data ----------------
+  
+  # marginal prevalences
+  colMeans(du, na.rm = TRUE)
+  
+  # can't use llist here in case some list elements are NULL (e.g., di_ours)
+  # return( llist(du,
+  #               di_std,
+  #               di_ours,
+  #               exclude_from_imp_model,
+  #               form_string,
+  #               gold_form_string,
+  #               coef_of_interest,
+  #               beta) )
+  
+  return( list(du = du,
+               di_std = di_std,
+               di_ours = di_ours,
+               exclude_from_imp_model = exclude_from_imp_model,
+               form_string = form_string,
+               gold_form_string = gold_form_string,
+               beta = beta) )
+  
+}
+
+# for testing:
+if (FALSE){
+  .p = data.frame(
+    model = "OLS",
+    #coef_of_interest = "A:C",  # "(Intercept)" or "A"
+    coef_of_interest = "A",
+    N = c(1000),
+    
+    dag_name = "1J"
+  )
+  
+  sim_data(.p)
+}
+
+
+
+
+# ANALYSIS METHOD FNS ---------------------
+
+# miss_method: CC, MI, gold, IPW
+# model: logistic, OLS
+fit_regression = function(form_string,
+                          model,
+                          coef_of_interest,
+                          miss_method,
+                          du,
+                          imps) {
+  
+  
+  # # test only
+  # form_string = CC_adj_form_string
+  # model = "OLS"
+  # miss_method = "CC"
+  
+  
+  #if ( miss_method %in% c("CC", "IPW") ) dat = dm
+  if ( miss_method == "MI" ) dat = imps
+  if ( miss_method %in% c("gold", "CC") ) dat = du
+  
+  # ~ CC and gold std  ---------------------
+  if ( miss_method %in% c("CC", "gold") ) {
+    
+    if ( model == "OLS" ) {
+      #if ( nuni(dat$Y) <= 2 ) stop("You have a binary outcome but are fitting OLS with model-based SEs; need to allow robust SEs")
+      
+      mod = lm( eval( parse(text = form_string) ),
+                data = dat )
+      
+    }
+    
+    if ( model == "logistic" ) {
+      mod = glm( eval( parse(text = form_string) ),
+                 data = dat,
+                 family = binomial(link = "logit") )
+    }
+    
+    bhats = coef(mod)
+    CI = as.numeric( confint(mod)[coef_of_interest,] )
+    
+    return( list( stats = data.frame( bhat = as.numeric( bhats[coef_of_interest] ),
+                                      bhat_lo = CI[1],
+                                      bhat_hi = CI[2],
+                                      bhat_width = CI[2] - CI[1] ) ) )
+  }
+  
+  # ~ MI  ---------------------
+  if ( miss_method == "MI" ) {
+    
+    
+    if ( model == "OLS" ) {
+      #if ( nuni( complete(imps,1)$Y) <= 2 ) stop("You have a binary outcome but are fitting OLS with model-based SEs; need to allow robust SEs")
+      
+      # works for both MICE and Amelia
+      if ( class(imps) %in% c("amelia", "mids") ) {
+        mod = with(imps,
+                   lm( eval( parse(text = form_string) ) ) )
+      }
+      
+      # for custom imputation
+      if ( class(imps) == "list" ) {
+        mod = lapply(imps, function(x) { lm(formula = as.formula(form_string), data = x) })
+      }
+    
+    }
+    
+    
+    if ( model == "logistic" ) {
+      mod = with(imps,
+                 glm( eval( parse(text = form_string) ),
+                      family = binomial(link = "logit") ) )
+      
+      
+      # works for both MICE and Amelia
+      if ( class(imps) %in% c("amelia", "mids") ) {
+        mod = with(imps,
+                   lm( eval( parse(text = form_string),
+                             family = binomial(link = "logit") ) ) )
+      }
+      
+      # for custom imputation
+      if ( class(imps) == "list" ) {
+        mod = lapply(imps, function(x) { lm(formula = as.formula(form_string,
+                                                                 family = binomial(link = "logit") ), data = x) })
+      }
+      
+      
+    }
+    
+    mod_pool = pool(mod)
+    summ = summary(mod_pool, conf.int = TRUE)
+    
+    bhat_lo = summ$`2.5 %`[ summ$term == coef_of_interest ]
+    bhat_hi = summ$`97.5 %`[ summ$term == coef_of_interest ]
+    
+    return( list( stats = data.frame( bhat = mod_pool$pooled$estimate[ mod_pool$pooled$term == coef_of_interest ],
+                                      bhat_lo = bhat_lo,
+                                      bhat_hi = bhat_hi,
+                                      bhat_width = bhat_hi - bhat_lo ) ) )
+  }
+  
+}
+
+
+# MODEL-FITTING HELPERS ---------------------
+
+# ~~ Wrapper Fn to Safely Run a Method -------
+
+# See note at the beginning of this script
+#  this fn automatically runs the method within a tryCatch loop, 
+#  records any error messages, and writes a results row to global var rep.res whether 
+#  or not the estimation method threw an error
+
+# Important: this fn works if method.fn() returns multiple rows
+# BUT in that case, it assumes that the CIs are shared for all rows of that method
+
+# expects global vars: all.errors, rep.res
+# directly edits res via superassignment
+run_method_safe = function( method.label,
+                            method.fn,
+                            .rep.res ) {
+  
+  cat( paste("\n run_method_safe flag 1: about to try running method", method.label) )
+  
+  
+  tryCatch({
+    
+    method.output = method.fn()
+    new.rows = method.output$stats
+    
+    if ( !exists("new.rows") ) {
+      cat("\n\n**** Object new.rows didn't exist for method", method.label)
+      cat("\nHere is method.output:\n")
+      print(method.output)
+    }
+    
+    cat( paste("\n run_method_safe flag 2: done calling method.fn() for", method.label) )
+    
+    error = NA
+    
+  }, error = function(err) {
+    # needs to be superassignment because inside the "error" fn
+    error <<- err$message
+    
+    # only need one variable in the blank dataframe since bind_rows below
+    #  will fill in the rest
+    new.rows <<- data.frame( method = method.label )
+    
+  })
+  
+  new.rows = new.rows %>% add_column( method = method.label, .before = 1 )
+  new.rows$overall.error = error
+  
+  
+  if ( nrow(.rep.res) == 0 ) .rep.res = new.rows else .rep.res = bind_rows(.rep.res, new.rows)
+  return(.rep.res) 
+  
+}
+
+
+
+# coefName: which coefficient to report
+# ols: the OLS model from lm()
+my_ols_hc0 = function( coefName, ols ){
+  
+  ( bhat.ols = coef(ols)[coefName] )
+  
+  # heteroskedasticity-consistent robust SEs:
+  (se.hc0 = sqrt( sandwich::vcovHC( ols, type="HC0")[coefName, coefName] ) )
+  
+  tcrit = qt(.975, df = ols$df.residual)
+  t = as.numeric( abs(bhat.ols / se.hc0) )
+  
+  return( data.frame(
+    est = bhat.ols,
+    se = se.hc0,
+    lo = bhat.ols - tcrit * se.hc0,
+    hi = bhat.ols + tcrit * se.hc0,
+    pval =  2 * ( 1 - pt(t, df = ols$df.residual ) ) ) )
+}
+
+# correlation of proxies in du only
+# i.e., not variables with "R" or "1"
+proxy_cor = function(.du) {
+  temp = .du %>%
+    select( -contains("R"), -contains("1") ) %>% select(sort(names(.)))
+  round( cor(temp, use = "pairwise.complete.obs" ), 3 )
+}
+
+# correlation of counterfactuals in du only
+cfact_cor = function(.du) {
+  
+  temp = .du %>%
+    select( contains("1") ) %>% select(sort(names(.)))
+  round( cor(temp), 3 )
+}
+
+# average correlation across imputations
+# works for both Amelia and mice
+imps_cor = function(.imps){
+  
+  if ( class(.imps) == "amelia" ) {
+    m = length(.imps$imputations)
+    
+    cors = lapply( X = 1:m,
+                   FUN = function(.m) cor( imps_am_std$imputations[[.m]] ) )
+  }
+  
+  if ( class(.imps) == "mids" ) {
+    m = .imps$m
+    
+    cors = lapply( X = 1:m,
+                   FUN = function(.m) cor(complete(.imps, .m) ) )
+    
+  }
+  
+  ( mean_cor_imps = Reduce("+", cors) / length(cors) )
+  round(mean_cor_imps, 3)
+}
+
+
+# CUSTOM MVN IMPUTATION: TRAIN IMPUTATION MODEL ONLY ON COMPLETE CASES  -------------------------------------------------
+
+# 2025-04-01 - with bootstrap
+impute_mvn_cc <- function(data, m = 5) {
+  library(mvtnorm)
+  
+  data <- as.data.frame(data)
+  n <- nrow(data)
+  p <- ncol(data)
+  
+  imputed_list <- vector("list", m)
+  
+  for (i in 1:m) {
+    # Step 1: Bootstrap rows (with missing values)
+    boot_idx <- sample(1:n, size = n, replace = TRUE)
+    data_boot <- data[boot_idx, ]
+    
+    # Step 2: Get complete cases within bootstrap sample
+    boot_cc <- data_boot[complete.cases(data_boot), ]
+    if (nrow(boot_cc) < 2) stop("Too few complete cases in bootstrap sample")
+    
+    # Step 3: Estimate mu and Sigma from complete cases in the bootstrap
+    mu_star <- colMeans(boot_cc)
+    Sigma_star <- cov(boot_cc)
+    
+    # Step 4: Impute missing values in the original data using mu* and Sigma*
+    imputed_data <- data
+    
+    for (r in 1:nrow(data)) {
+      missing_vars <- which(is.na(data[r, ]))
+      if (length(missing_vars) > 0) {
+        observed_vars <- which(!is.na(data[r, ]))
+        
+        if (length(observed_vars) == 0) {
+          # Fully missing row: draw from joint MVN
+          imputed_values <- as.numeric(rmvnorm(1, mean = mu_star, sigma = Sigma_star))
+        } else {
+          # Conditional MVN draw
+          mu_obs <- mu_star[observed_vars]
+          mu_miss <- mu_star[missing_vars]
+          Sigma_obs_obs <- Sigma_star[observed_vars, observed_vars, drop = FALSE]
+          Sigma_miss_obs <- Sigma_star[missing_vars, observed_vars, drop = FALSE]
+          Sigma_obs_miss <- Sigma_star[observed_vars, missing_vars, drop = FALSE]
+          Sigma_miss_miss <- Sigma_star[missing_vars, missing_vars, drop = FALSE]
+          
+          x_obs <- as.numeric(data[r, observed_vars])
+          
+          cond_mean <- mu_miss + Sigma_miss_obs %*% solve(Sigma_obs_obs) %*% (x_obs - mu_obs)
+          cond_cov <- Sigma_miss_miss - Sigma_miss_obs %*% solve(Sigma_obs_obs) %*% Sigma_obs_miss
+          
+          imputed_values <- as.numeric(rmvnorm(1, mean = cond_mean, sigma = cond_cov))
+        }
+        
+        imputed_data[r, missing_vars] <- imputed_values
+      }
+    }
+    
+    imputed_list[[i]] <- imputed_data
+  }
+  
+  return(imputed_list)
+}
+
+
+
+# # with Wishart
+# impute_mvn_cc <- function(data, m = 5) {
+#   
+#   data <- as.data.frame(data)
+#   complete_data <- data[complete.cases(data), ]
+#   n_cc <- nrow(complete_data)
+#   if (n_cc < 2) stop("Not enough complete cases to fit MVN model.")
+#   
+#   p <- ncol(complete_data)
+#   
+#   # initialize MVN mean and covariance matrix
+#   mu_hat <- colMeans(complete_data)
+#   S <- cov(complete_data)
+#   
+#   imputed_list <- vector("list", m)
+#   
+#   for (i in 1:m) {
+#     # draw from Inv-Wishart posterior over parameters
+#     Sigma_star <- riwish(n_cc - 1, (n_cc - 1) * S)  # Inv-Wishart(n-1, (n-1)*S)
+#     mu_star <- as.numeric(rmvnorm(1, mean = mu_hat, sigma = Sigma_star / n_cc))
+#     
+#     imputed_data <- data
+#     
+#     for (r in 1:nrow(data)) {
+#       
+#       missing_vars <- which(is.na(data[r, ]))
+#       
+#       if (length(missing_vars) > 0) {
+#         observed_vars <- which(!is.na(data[r, ]))
+#         
+#         if (length(observed_vars) == 0) {
+#           # if row is fully missing row, use unconditional MVN draw
+#           imputed_values <- as.numeric(rmvnorm(1, mean = mu_star, sigma = Sigma_star))
+#         } else {
+#           mu_obs <- mu_star[observed_vars]
+#           mu_miss <- mu_star[missing_vars]
+#           Sigma_obs_obs <- Sigma_star[observed_vars, observed_vars, drop = FALSE]
+#           Sigma_miss_obs <- Sigma_star[missing_vars, observed_vars, drop = FALSE]
+#           Sigma_obs_miss <- Sigma_star[observed_vars, missing_vars, drop = FALSE]
+#           Sigma_miss_miss <- Sigma_star[missing_vars, missing_vars, drop = FALSE]
+#           
+#           x_obs <- as.numeric(data[r, observed_vars])
+#           
+#           cond_mean <- mu_miss + Sigma_miss_obs %*% solve(Sigma_obs_obs) %*% (x_obs - mu_obs)
+#           cond_cov <- Sigma_miss_miss - Sigma_miss_obs %*% solve(Sigma_obs_obs) %*% Sigma_obs_miss
+#           
+#           imputed_values <- as.numeric(rmvnorm(1, mean = cond_mean, sigma = cond_cov))
+#         }
+#         
+#         imputed_data[r, missing_vars] <- imputed_values
+#       }
+#     }
+#     
+#     imputed_list[[i]] <- imputed_data
+#   }
+#   
+#   return(imputed_list)
+# }
+
+# with fixed mu and Sigma: undercovers
+# impute_mvn_cc <- function(data, m = 5) {
+# 
+#   data <- as.data.frame(data)
+#   complete_data <- data[complete.cases(data), ]
+#   if (nrow(complete_data) < 2) {
+#     stop("Not enough complete cases to fit the multivariate normal model.")
+#   }
+#   
+#   mu <- colMeans(complete_data)
+#   Sigma <- cov(complete_data)
+#   imputed_list <- vector("list", m)
+#   
+#   for (i in 1:m) {
+#     imputed_data <- data
+#     for (r in 1:nrow(data)) {
+#       missing_vars <- which(is.na(data[r, ]))
+#       if (length(missing_vars) > 0) {
+#         observed_vars <- which(!is.na(data[r, ]))
+#         if (length(observed_vars) == 0) {
+#           imputed_values <- as.numeric(rmvnorm(1, mean = mu, sigma = Sigma))
+#         } else {
+#           mu_obs <- mu[observed_vars]
+#           mu_miss <- mu[missing_vars]
+#           Sigma_obs_obs <- Sigma[observed_vars, observed_vars, drop = FALSE]
+#           Sigma_miss_obs <- Sigma[missing_vars, observed_vars, drop = FALSE]
+#           Sigma_obs_miss <- Sigma[observed_vars, missing_vars, drop = FALSE]
+#           Sigma_miss_miss <- Sigma[missing_vars, missing_vars, drop = FALSE]
+#           
+#           x_obs <- as.numeric(data[r, observed_vars])
+#           cond_mean <- mu_miss + Sigma_miss_obs %*% solve(Sigma_obs_obs) %*% (x_obs - mu_obs)
+#           cond_cov <- Sigma_miss_miss - Sigma_miss_obs %*% solve(Sigma_obs_obs) %*% Sigma_obs_miss
+#           
+#           imputed_values <- as.numeric(rmvnorm(1, mean = as.numeric(cond_mean), sigma = cond_cov))
+#         }
+#         imputed_data[r, missing_vars] <- imputed_values
+#       }
+#     }
+#     imputed_list[[i]] <- imputed_data
+#   }
+#   
+#   return(imputed_list)
+# }
+
+
+
+# ## Test on nhanes data
+# data(nhanes)
+# 
+# # using Amelia (off the rack)
+# imps_am_std = amelia( as.data.frame(nhanes),
+#                       m=10,
+#                       p2s = 0 )
+# 
+# fit_regression(form_string = "bmi ~ chl",
+#                model = "OLS",
+#                coef_of_interest = "chl",
+#                miss_method = "MI",
+#                imps = imps_am_std)
+# 
+# 
+# 
+# #### Using mvn_cc
+# imps_mvn_cc = impute_mvn_cc(nhanes, m=10)
+# 
+# fit_regression(form_string = "bmi ~ chl",
+#                model = "OLS",
+#                coef_of_interest = "chl",
+#                miss_method = "MI",
+#                imps = imps_mvn_cc)
+
+# only needed if using Wishart in 
+# riwish <- function(df, S) {
+#   p <- nrow(S)
+#   Z <- matrix(0, p, p)
+#   for (i in 1:p) {
+#     Z[i, i] <- sqrt(rchisq(1, df - i + 1))
+#     if (i < p) {
+#       Z[(i+1):p, i] <- rnorm(p - i)
+#     }
+#   }
+#   C <- t(Z)
+#   # Compute the inverse-Wishart draw:
+#   # A ~ Wishart(df, I) ⇒ inv(C) %*% S %*% t(inv(C)) ~ Inv-Wishart(df, S)
+#   T_matrix <- chol(S)
+#   IW_draw <- backsolve(C, diag(p))         # C⁻¹
+#   IW_draw <- T_matrix %*% IW_draw          # S^(1/2) * C⁻¹
+#   Sigma <- IW_draw %*% t(IW_draw)          # (S^(1/2) * C⁻¹)(...)ᵗ
+#   return(Sigma)
+# }
+
+
+
+
+# SMALL GENERIC HELPERS ---------------------
+
+# quickly look at results when running doParallel locally
+srr = function(.rep.res) {
+  
+  
+  cat("\n")
+  print( .rep.res %>%
+           mutate_if(is.numeric, function(x) round(x,2)) )
+  cat("\n")
+  
+}
+
+
+
+# check CI coverage
+covers = function( truth, lo, hi ) {
+  return( as.numeric( (lo <= truth) & (hi >= truth) ) )
+}
+
+# get names of dataframe containing a string
+namesWith = function(pattern, dat){
+  names(dat)[ grepl(pattern = pattern, x = names(dat) ) ]
+}
+
+
+# quick length(unique)
+nuni = function(x) {
+  length(unique(x))
+}
+
+# (re-)install package AND its dependencies
+# useful for stupid rstan issues in which rstan itself it UTD but not its dependencies
+# https://stackoverflow.com/questions/21010705/update-a-specific-r-package-and-its-dependencies
+instPkgPlusDeps <- function(pkg, install = FALSE,
+                            which = c("Depends", "Imports", "LinkingTo"),
+                            inc.pkg = TRUE) {
+  stopifnot(require("tools")) ## load tools
+  ap <- available.packages() ## takes a minute on first use
+  ## get dependencies for pkg recursively through all dependencies
+  deps <- package_dependencies(pkg, db = ap, which = which, recursive = TRUE)
+  ## the next line can generate warnings; I think these are harmless
+  ## returns the Priority field. `NA` indicates not Base or Recommended
+  pri <- sapply(deps[[1]], packageDescription, fields = "Priority")
+  ## filter out Base & Recommended pkgs - we want the `NA` entries
+  deps <- deps[[1]][is.na(pri)]
+  ## install pkg too?
+  if (inc.pkg) {
+    deps = c(pkg, deps)
+  }
+  ## are we installing?
+  if (install) {
+    install.packages(deps)
+  }
+  deps ## return dependencies
+}
+
+# example
+# instPkgPlusDeps("fields")
+
+
+# CLUSTER FNS ---------------------------------------------------------------
+
+# DO NOT CHANGE THE INDENTATION IN THE BELOW OR ELSE SLURM 
+#  WILL SILENTLY IGNORE THE BATCH COMMANDS DUE TO EXTRA WHITESPACE!!
+# DO NOT CHANGE THE INDENTATION IN THE BELOW OR ELSE SLURM 
+#  WILL SILENTLY IGNORE THE BATCH COMMANDS DUE TO EXTRA WHITESPACE!!
+sbatch_skeleton <- function() {
+  return(
+    "#!/bin/bash
+#################
+#set a job name  
+#SBATCH --job-name=JOBNAME
+#################  
+#a file for job output, you can check job progress
+#SBATCH --output=OUTFILE
+#################
+# a file for errors from the job
+#SBATCH --error=ERRORFILE
+#################
+#time you think you need; default is one hour
+#SBATCH --time=JOBTIME
+#################
+#quality of service; think of it as job priority
+#SBATCH --qos=QUALITY
+#################
+#submit to both owners and normal partition
+#SBATCH -p normal,owners
+#################
+#number of nodes you are requesting
+#SBATCH --nodes=NODENUMBER
+#################
+#memory per node; default is 4000 MB
+#SBATCH --mem=MEMPERNODE
+#you could use --mem-per-cpu; they mean what we are calling cores
+#################
+#get emailed about job BEGIN, END, and FAIL
+#SBATCH --mail-type=MAILTYPE
+#################
+#who to send email to; please change to your email
+#SBATCH  --mail-user=USER_EMAIL
+#################
+#task to run per node; each node has 16 cores
+#SBATCH --ntasks=TASKS_PER_NODE
+#################
+#SBATCH --cpus-per-task=CPUS_PER_TASK
+#now run normal batch commands
+
+ml load v8
+ml load R/4.3.2
+R -f PATH_TO_R_SCRIPT ARGS_TO_R_SCRIPT")
+}
+
+
+
+generateSbatch <- function(sbatch_params,
+                           runfile_path = NA,
+                           run_now = F) {
+  
+  #sbatch_params is a data frame with the following columns
+  #jobname: string, specifies name associated with job in SLURM queue
+  #outfile: string, specifies the name of the output file generated by job
+  #errorfile: string, specifies the name of the error file generated by job
+  #jobtime: string in hh:mm:ss format, max (maybe soft) is 48:00:00 
+  #specifies the amoung of time job resources should be allocated
+  #jobs still running after this amount of time will be aborted
+  #quality: kind of like priority, normal works
+  #node_number, integer: the number of nodes (computers w/16 cpus each) to allocate 
+  #mem_per_node, integer: RAM, in MB, to allocate to each node
+  #mailtype, string: ALL, BEGIN, END, FAIL: what types of events should you be notified about via email
+  #user_email string: email address: email address to send notifications
+  #tasks_per_node: integer, number of tasks, you should probably use 1
+  #cpus_per_task: integer, 1-16, number of cpus to use, corresponds to number of available cores per task
+  #path_to_r_script: path to r script on sherlock
+  #args_to_r_script: arguments to pass to r script on command line
+  #write_path: where to write the sbatch file
+  #server_sbatch_path: where sbatch files will be stored on sherlock
+  #runfile_path is a string containing a path at which to write an R script that can be used to run
+  #the batch files generated by this function. 
+  #if NA, no runfile will be written
+  #run_now is a boolean specifying whether batch files should be run as they are generated
+  
+  sbatches <- list()
+  if (!is.na(runfile_path)) {
+    outfile_lines <- c(paste0("# Generated on ",  Sys.time()))
+  }
+  for (sbatch in 1:nrow(sbatch_params) ) {
+    gen_batch <- sbatch_skeleton()
+    #set job name
+    if (is.null(sbatch_params$jobname[sbatch])) { 
+      gen_batch <- gsub("JOBNAME", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("JOBNAME", sbatch_params$jobname[sbatch], gen_batch) 
+    }
+    #set outfile name
+    if (is.null(sbatch_params$outfile[sbatch])) { 
+      gen_batch <- gsub("OUTFILE", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("OUTFILE", sbatch_params$outfile[sbatch], gen_batch) 
+    }
+    #set errorfile name
+    if (is.null(sbatch_params$errorfile[sbatch])) { 
+      gen_batch <- gsub("ERRORFILE", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("ERRORFILE", sbatch_params$errorfile[sbatch], gen_batch) 
+    }
+    #set jobtime
+    if (is.null(sbatch_params$jobtime[sbatch])) { 
+      gen_batch <- gsub("JOBTIME", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("JOBTIME", sbatch_params$jobtime[sbatch], gen_batch) 
+    }
+    #set quality
+    if (is.null(sbatch_params$quality[sbatch])) { 
+      gen_batch <- gsub("QUALITY", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("QUALITY", sbatch_params$quality[sbatch], gen_batch) 
+    }
+    #set number of nodes
+    if (is.null(sbatch_params$node_number[sbatch])) { 
+      gen_batch <- gsub("NODENUMBER", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("NODENUMBER", sbatch_params$node_number[sbatch], gen_batch) 
+    }
+    #set memory per node
+    if (is.null(sbatch_params$mem_per_node[sbatch])) { 
+      gen_batch <- gsub("MEMPERNODE", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("MEMPERNODE", sbatch_params$mem_per_node[sbatch], gen_batch) 
+    }
+    #set requested mail message types
+    if (is.null(sbatch_params$mailtype[sbatch])) { 
+      gen_batch <- gsub("MAILTYPE", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("MAILTYPE", sbatch_params$mailtype[sbatch], gen_batch) 
+    }
+    #set email at which to receive messages
+    if (is.null(sbatch_params$user_email[sbatch])) { 
+      gen_batch <- gsub("USER_EMAIL", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("USER_EMAIL", sbatch_params$user_email[sbatch], gen_batch) 
+    }
+    #set tasks per node
+    if (is.null(sbatch_params$tasks_per_node[sbatch])) { 
+      gen_batch <- gsub("TASKS_PER_NODE", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("TASKS_PER_NODE", sbatch_params$tasks_per_node[sbatch], gen_batch) 
+    }
+    #set cpus per task
+    if (is.null(sbatch_params$cpus_per_task[sbatch])) { 
+      gen_batch <- gsub("CPUS_PER_TASK", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("CPUS_PER_TASK", sbatch_params$cpus_per_task[sbatch], gen_batch) 
+    }
+    #set path to r script
+    if (is.null(sbatch_params$path_to_r_script[sbatch])) { 
+      gen_batch <- gsub("PATH_TO_R_SCRIPT", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("PATH_TO_R_SCRIPT", sbatch_params$path_to_r_script[sbatch], gen_batch) 
+    }
+    #set args to r script
+    if (is.null(sbatch_params$args_to_r_script[sbatch])) { 
+      gen_batch <- gsub("ARGS_TO_R_SCRIPT", "unnamed", gen_batch) 
+    } else { 
+      gen_batch <- gsub("ARGS_TO_R_SCRIPT", sbatch_params$args_to_r_script[sbatch], gen_batch) 
+    }
+    
+    #write batch file
+    if (is.null(sbatch_params$write_path[sbatch])) { 
+      cat(gen_batch, file = paste0("~/sbatch_generated_at_", gsub(" |:|-", "_", Sys.time()) ), append = F)
+    } else { 
+      cat(gen_batch, file = sbatch_params$write_path[sbatch], append = F)
+    }
+    
+    if (!is.na(sbatch_params$server_sbatch_path[sbatch])) {
+      outfile_lines <- c(outfile_lines, paste0("system(\"sbatch ", sbatch_params$server_sbatch_path[sbatch], "\")"))
+    } 
+    sbatches[[sbatch]] <- gen_batch
+  }
+  if (!is.na(runfile_path)) {
+    cat(paste0(outfile_lines, collapse = "\n"), file = runfile_path)
+  }
+  if(run_now) { system(paste0("R -f ", runfile_path)) } 
+  
+  return(sbatches)
+}
+
+
+# looks at results files to identify sbatches that didn't write a file
+# .max.sbatch.num: If not passed, defaults to largest number in actually run jobs.
+
+sbatch_not_run = function(.results.singles.path,
+                          .results.write.path,
+                          .name.prefix,
+                          .max.sbatch.num = NA ) {
+  
+  # get list of all files in folder
+  all.files = list.files(.results.singles.path, full.names=TRUE)
+  
+  # we only want the ones whose name includes .name.prefix
+  keepers = all.files[ grep( .name.prefix, all.files ) ]
+  
+  # extract job numbers
+  sbatch.nums = as.numeric( unlist( lapply( strsplit( keepers, split = "_"), FUN = function(x) x[5] ) ) )
+  
+  # check for missed jobs before the max one
+  if ( is.na(.max.sbatch.num) ) .max.sbatch.num = max(sbatch.nums)
+  all.nums = 1 : .max.sbatch.num
+  missed.nums = all.nums[ !all.nums %in% sbatch.nums ]
+  
+  # give info
+  print( paste("The max job number is: ", max(sbatch.nums) ) )
+  print( paste( "Number of jobs that weren't run: ",
+                ifelse( length(missed.nums) > 0, length(missed.nums), "none" ) ) )
+  
+  if( length(missed.nums) > 0 ) {
+    setwd(.results.write.path)
+    write.csv(missed.nums, "missed_job_nums.csv")
+  }
+  
+  return(missed.nums)
+  
+}
+
+# STITCH RESULTS FILES -------------------------------------
+
+# given a folder path for results and a common beginning of file name of results files
+#   written by separate workers in parallel, stitch results files together into a
+#   single csv.
+
+stitch_files = function(.results.singles.path, .results.stitched.write.path=.results.singles.path,
+                        .name.prefix, .stitch.file.name="stitched_model_fit_results.csv") {
+  
+  # .results.singles.path = "/home/groups/manishad/MRM/sim_results/long"
+  # .results.stitched.write.path = "/home/groups/manishad/MRM/sim_results/overall_stitched"
+  # .name.prefix = "long_results"
+  # .stitch.file.name="stitched.csv"
+  
+  # get list of all files in folder
+  all.files = list.files(.results.singles.path, full.names=TRUE)
+  
+  # we only want the ones whose name includes .name.prefix
+  keepers = all.files[ grep( .name.prefix, all.files ) ]
+  
+  # grab variable names from first file
+  names = names( read.csv(keepers[1] )[-1] )
+  
+  # read in and rbind the keepers
+  tables <- lapply( keepers, function(x) read.csv(x, header= TRUE) )
+  s <- do.call(rbind, tables)
+  
+  names(s) = names( read.csv(keepers[1], header= TRUE) )
+  
+  if( is.na(s[1,1]) ) s = s[-1,]  # delete annoying NA row
+  write.csv(s, paste(.results.stitched.write.path, .stitch.file.name, sep="/") )
+  return(s)
+}
+
+
+# quickly look at results from job #1
+
+res1 = function() {
+  setwd("/home/groups/manishad/SAPH/long_results")
+  rep.res = fread("long_results_job_1_.csv")
+  srr()
+  
+  cat("\nErrors by method:" )
+  print( rep.res %>% group_by(method) %>%
+           summarise(prop.error = mean( overall.error != "" ) ) )
+  
+  #table(rep.res$overall.error)
+  
+  cat("\n\nDim:", dim(rep.res))
+  cat("\n\nReps completed:", nrow(rep.res)/nuni(rep.res$method))
+}
+
+
+
+make_agg_data = function(s) {
+  
+  correct.order = c("gold", "CC", "MVN-CC-std", "Am-std", "MICE-std", "MVN-CC-ours", "Am-ours", "MICE-ours")
+  s$method = factor(s$method, levels = correct.order)
+  
+  # fill in beta (where it's NA) using gold-standard
+  beta_emp = s %>% filter(method == "gold") %>%
+    group_by(scen.name) %>%
+    summarise(beta = meanNA(bhat)) 
+  as.data.frame(beta_emp)
+  
+  s2 = s
+  
+  s2 = s2 %>% rowwise() %>%
+    mutate( beta = ifelse( !is.na(beta),
+                           beta,
+                           beta_emp$beta[ beta_emp$scen.name == scen.name ] ) )
+  
+  # sanity check
+  as.data.frame( s2 %>% group_by(dag_name, coef_of_interest) %>%
+                   summarise(beta[1]) )
+  # end of filling in beta
+  
+  
+  aggo = s2 %>% group_by(dag_name, coef_of_interest, method) %>%
+    summarise( 
+      reps = n(),
+      Bhat = meanNA(bhat),
+      BhatBias = meanNA(bhat - beta),
+      BhatLo = meanNA(bhat_lo),
+      BhatHi = meanNA(bhat_hi),
+      BhatFail = mean(is.na(bhat)),
+      BhatRMSE = sqrt( meanNA( (bhat - beta)^2 ) ),
+      BhatCover = meanNA( covers(truth = beta,
+                                 lo = bhat_lo,
+                                 hi = bhat_hi) ) ) %>%
+    arrange() %>%
+    mutate_if(is.numeric, function(x) round(x,2)) 
+  
+  return(aggo)
+  
+}
+
+
+wrangle_agg_data = function(.aggo) {
+  
+  agg = .aggo
+  
+  # recode variables
+  agg$coef_of_interest_pretty = agg$coef_of_interest
+  agg$coef_of_interest_pretty[ agg$dag_name %in% c("1B", "1D") & agg$coef_of_interest == "(Intercept)"] = "E[A]"
+  agg$coef_of_interest_pretty[ agg$dag_name %in% c("1Fb") & agg$coef_of_interest == "(Intercept)"] = "E[B]" 
+  agg$coef_of_interest_pretty[ agg$coef_of_interest == "A"] = "E[B | A]" 
+  # check it
+  agg %>% group_by(dag_name, coef_of_interest) %>% 
+    summarise(unique(coef_of_interest_pretty))
+  
+  agg$dag_name_pretty = agg$dag_name
+  agg$dag_name_pretty[ agg$dag_name == "1B" ] = "DAG (a)"
+  agg$dag_name_pretty[ agg$dag_name == "1D" ] = "DAG (b)"
+  agg$dag_name_pretty[ agg$dag_name == "1Fb" ] = "DAG (c)"
+  agg$dag_name_pretty[ agg$dag_name == "1J" ] = "DAG (d)"
+  
+  agg$method_pretty = as.character(agg$method)
+  agg$method_pretty[ agg$method == "gold" ] = "Benchmark"
+  agg$method_pretty[ agg$method == "CC" ] = "Complete-case"
+  agg$method_pretty[ agg$method == "MVN-CC-std" ] = "MVN (standard)"
+  agg$method_pretty[ agg$method == "MVN-CC-ours" ] = "MVN (m-backdoor)"
+  agg$method_pretty[ agg$method == "Am-std" ] = "Amelia (standard)"
+  agg$method_pretty[ agg$method == "Am-ours" ] = "Amelia (m-backdoor)"
+  agg$method_pretty[ agg$method == "MICE-std" ] = "MICE (standard)"
+  agg$method_pretty[ agg$method == "MICE-ours" ] = "MICE (m-backdoor)"
+  
+  return(agg)
+}
+
+
+# INPUT/OUTPUT FNS ----------------------------------------------
+
+
+# one or both dirs can be NA
+my_ggsave = function(name,
+                     .plot = last_plot(),
+                     .width,
+                     .height,
+                     .results.dir = results.dir,
+                     .overleaf.dir = overleaf.dir) {
+  
+  dirs = c(.results.dir, .overleaf.dir)
+  dirIsNA = sapply(dirs, is.na)
+  validDirs = dirs[ !dirIsNA ]
+  
+  
+  for ( dir in validDirs ) {
+    setwd(dir)
+    ggsave( name,
+            plot = .plot,
+            width = .width,
+            height = .height,
+            device = "pdf" )
+  }
+}
+
+# for reproducible manuscript-writing
+# adds a row to the file "stats_for_paper" with a new statistic or value for the manuscript
+# optionally, "section" describes the section of code producing a given result
+# expects "study" to be a global var
+update_result_csv = function( name,
+                              .section = NA,
+                              .results.dir = results.dir,
+                              .overleaf.dir = overleaf.dir.stats,
+                              value = NA,
+                              print = FALSE ) {
+  
+  # if either is NULL, it just won't be included in this vector
+  dirs = c(.results.dir, .overleaf.dir)
+  
+  
+  new.rows = data.frame( name,
+                         value = as.character(value),
+                         section = as.character(.section) )
+  
+  # to avoid issues with variable types when overwriting
+  new.rows$name = as.character(new.rows$name)
+  new.rows$value = as.character(new.rows$value)
+  new.rows$section = as.character(new.rows$section)
+  
+  
+  for (.dir in dirs) {
+    
+    setwd(.dir)
+    
+    if ( "stats_for_paper.csv" %in% list.files() ) {
+      res <<- read.csv( "stats_for_paper.csv",
+                        stringsAsFactors = FALSE,
+                        colClasses = rep("character", 3 ) )
+      
+      # if this entry is already in the results file, overwrite the
+      #  old one
+      if ( all(name %in% res$name) ) res[ res$name %in% name, ] <<- new.rows
+      else res <<- rbind(res, new.rows)
+    }
+    
+    if ( ! "stats_for_paper.csv" %in% list.files() ) {
+      res <<- new.rows
+    }
+    
+    write.csv( res, 
+               "stats_for_paper.csv",
+               row.names = FALSE,
+               quote = FALSE )
+    
+  }  # end "for (.dir in dirs)"
+  
+  
+  if ( print == TRUE ) {
+    View(res)
+  }
+  
+}
+
+
+
+# stands for "wipe results"
+wr = function(){
+  setwd(results.dir)
+  if( "stats_for_paper.csv" %in% list.files() ) system("rm stats_for_paper.csv")
+  setwd(overleaf.dir)
+  if( "stats_for_paper.csv" %in% list.files() ) system("rm stats_for_paper.csv")
+}
+
+# stands for "view results"
+vr = function(){
+  setwd(results.dir)
+  View( read.csv("stats_for_paper.csv") )
+}
+
+
+# GENERIC SMALL HELPERS ----------------------------------------------
+
+# quick mean with NAs removed
+meanNA = function(x){
+  mean(x, na.rm = TRUE)
+}
+
+# quick median with NAs removed
+medNA = function(x){
+  median(x, na.rm = TRUE)
+}
+
+# quick length(unique) equivalent
+uni = function(x){
+  length(unique(x))
+}
+
+expit = function(x) 1 / (1+exp(-x))
+
+logit = function(x) log(x/(1-x))
+
+
+# ~ Handling strings -----------------
+
+# return strings containing anything in pattern vector
+stringsWith = function(pattern, x){
+  # make regex expression 
+  patterns = paste(pattern, collapse="|")
+  x[ grepl(pattern = patterns, x = x)]
+}
+# stringsWith( pattern = c("dog", "cat"),
+#  x = c("dogcat", "horse", "cat", "lion") )
+
+
+# return indices of strings containing anything in pattern vector
+whichStrings = function(pattern, x){
+  patterns = paste(pattern, collapse="|")
+  grepl(pattern = pattern, x = x)
+}
+
+names_with = function(.dat, .pattern) {
+  names(.dat)[ grepl(pattern = .pattern, x = names(.dat) ) ]
+}
+
+
+
+# ~ Calculate simple stats -----------------
+
+quick_ci = function( est, var ) {
+  c( est - qnorm(.975) * sqrt(var),
+     est + qnorm(.975) * sqrt(var) )
+}
+
+quick_pval = function( est, var ) {
+  2 * ( 1 - pnorm( abs( est / sqrt(var) ) ) )
+}
+
+
+# ~ Formatting stats as strings -----------------
+
+# round while keeping trailing zeroes
+my_round = function(x, digits) {
+  formatC( round( x, digits ), format='f', digits=digits )
+}
+
+format_CI = function( lo, hi, digits ) {
+  paste( "[", my_round( lo, digits ), ", ", my_round( hi, digits ), "]", sep="" )
+}
+
+# round down to nearest integer
+format_sval = function( sval, digits ) {
+  if ( as.character(sval) == "--" ) return("Already NS")
+  else if ( as.character(sval) == "Not possible" ) return("Not possible")
+  else return( as.character( round(sval, digits) ) )
+  #else return( floor(sval) )
+}
+
+format_pval = function(p) {
+  if (p >= 0.01) return( my_round( p, 2 ) )
+  if (p < 0.01 & p > 10^-5 ) return( formatC( p, format = "e", digits = 0 ) )
+  if ( p < 10^-5 ) return("< 1e-05")
+}
+
+
+
+
+

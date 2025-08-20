@@ -1,0 +1,29 @@
+{
+    "id": "65BF3D8F",
+    "path": "~/Dropbox/Personal computer/Independent studies/2023/*IWN (Imputation without nightMARs)/Simulation code/genSbatch_IWN.R",
+    "project_path": "genSbatch_IWN.R",
+    "type": "r_source",
+    "hash": "1196641653",
+    "contents": "",
+    "dirty": false,
+    "created": 1696337755621.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "docOutlineVisible": "1",
+        "cursorPosition": "23,19",
+        "scrollLine": "0",
+        "rmdVisualCollapsedChunks": "",
+        "docOutlineSize": "126"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1695227685,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1695227685,
+    "read_only": false,
+    "read_only_alternatives": []
+}

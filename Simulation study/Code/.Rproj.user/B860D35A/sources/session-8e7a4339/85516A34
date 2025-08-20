@@ -1,0 +1,27 @@
+{
+    "id": "85516A34",
+    "path": "~/Dropbox/Personal computer/Independent studies/2023/*IWN (Imputation without nightMARs)/Linked to OSF (IWN)/Simulation study/Code/doParallel_IWN.R",
+    "project_path": "doParallel_IWN.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1718221527554.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "21,52",
+        "scrollLine": "0",
+        "docOutlineVisible": "1"
+    },
+    "folds": "60|23|73|2|\n108|17|201|0|\n215|30|688|0|\n468|42|486|6|\n487|42|504|6|\n",
+    "lastKnownWriteTime": 1743513429,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1743513693248,
+    "read_only": false,
+    "read_only_alternatives": []
+}

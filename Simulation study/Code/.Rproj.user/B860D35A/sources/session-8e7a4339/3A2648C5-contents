@@ -1,0 +1,47 @@
+## Overview
+ 
+This repository contains all code required to reproduce the applied example and simulation studies reported in:
+
+*Mathur MB & Shpitser I (under review). Imputation without nightMARs: Graphical criteria for valid imputation of missing data. Preprint available at [xxx](xxx).*
+
+The code is also version-controlled on Github: [simulation study](https://github.com/mayamathur/iwn_sims/), [supplementary applied example](https://github.com/mayamathur/iwn_applied/).
+
+
+## How to reproduce the supplementary applied example
+
+The dataset is [publicly available](https://www.icpsr.umich.edu/web/NADAC/studies/36423) through the Inter-University Consortium for Political and Social Research (ICPSR). Due to their terms of use, the dataset cannot be posted in this repository.
+
+All relevant code is in the directory `Applied example`. The files use the `renv` package for reproducibility; as noted in the comments of the code files, you can uncomment the calls `renv::snapshot()` if you want to reproduce our software environment. Open the R project `Code/Code.Rproj` and run the scripts as follows:
+
+- `prep_applied_IWN.R` loads the ICPSR data, draws a random sample of 5,000, and preps variables for analysis. The prepped data are written to a separate folder (not publicly available per ICPSR's terms of use.).
+- `analyze_applied_IWN.R` conducts all analyses by calling the helper code in `helper_applied_IWN.R`.
+
+
+## How to re-run the simulation study from scratch
+
+Simulation scripts are parallelized and were run on a SLURM cluster.
+
+The key scripts (in __Simulation study/Code__) are:
+
+- `helper_IWN.R` and contains helper functions that can be run locally. This is the file to consult if you have questions about the various custom functions called by `doParallel_IWN.R` below. 
+
+- `doParallel_IWN.R` runs a parallelized simulation study. Specifically, it runs `sim.reps` simulation reps on each compute node. 
+
+- `genSbatch_IWN.R` automatically generates the sbatch files based on user-specified simulation parameters (from which `genSbatch_IWN.R` writes a spreadsheet of scenario parameters, `scen_params.csv`, to the cluster environment; this file is called later by `doParallel_IWN.R`). This script is specialized for our cluster and would likely need to be rewritten for other computing systems. 
+
+- `stitch_on_sherlock_IWN.R` takes the output files written by `doParallel_IWN.R`. This was run on the cluster. Writes the data files `stitched.csv` (iterate-level data) and `agg.csv` (scenario-level data) in __Results/2024-07-30 - as in first journal submission__.
+
+- `prep_sims_IWN.R` takes `agg.csv` described above and does variable manipulations to facilitate analysis. Results are saved in __Results/2024-07-30 - as in first journal submission__.
+
+
+## How to reproduce the simulation analyses from our saved results
+
+Open the R project `Simulation code.Rproj`. All analyses, results tables, and plots can be generated using `analyze_sims_IWN.R`. Each table is printed in LaTeX code that was copied straight into the manuscript. This code also uses the function `update_result_csv()` to write each numerical result that appears in the body of the manuscript into the file `stats_for_paper.csv`. This is so that results can be piped straight into the manuscript, and the code file explains how you can generate this file locally by choosing a local directory.
+
+This script calls helper functions in `analyze_sims_helper_IWN.R` and works with the dataset `agg.csv` described above. 
+
+
+
+
+
+

@@ -1,0 +1,10 @@
+.p = data.frame(
+  model = "OLS",
+  #coef_of_interest = "A:C",  # "(Intercept)" or "A"
+  coef_of_interest = "A",
+  N = c(1000),
+  
+  dag_name = "1J"
+)
+
+sim_data(.p)
