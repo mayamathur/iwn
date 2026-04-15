@@ -12,7 +12,7 @@ sim_data = function(.p) {
   
   if (.p$model != "OLS" ) stop("Only handles model OLS for now")
   
-  # ~ DAG 1B (= DAG (a) in paper) -----------------------------
+  # ~ ***DAG 1B (= DAG (a) in paper) -----------------------------
   # RA-A collider
   
   if ( .p$dag_name == "1B" ) {
@@ -79,7 +79,7 @@ sim_data = function(.p) {
   }  # end of .p$dag_name == "1B"
   
   
-  # ~ DAG 1D (= DAG (b) in paper) -----------------------------
+  # ~ ***DAG 1D (= DAG (b) in paper) -----------------------------
   # similar to 1B, but now B has its own missingness, so restricting
   #  the dataset to exclude it from imputation doesn't work
   
@@ -435,7 +435,7 @@ sim_data = function(.p) {
   
   
   
-  # ~ DAG 1Fb (= DAG (c) in paper) -----------------------------
+  # ~ ***DAG 1Fb (= DAG (c) in paper) -----------------------------
   # Ilya's suggestion
   # Type-D
 
@@ -565,7 +565,7 @@ sim_data = function(.p) {
   }  # end of .p$dag_name == "1H"
   
   
-  # ~ DAG 1J (= DAG (d) in paper; only in supplement) -----------------------------
+  # ~ ***DAG 1J (= DAG (d) in paper; only in supplement) -----------------------------
   
   # file-matching on 2 confounders
   if ( .p$dag_name == "1J" ) {
