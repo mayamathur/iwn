@@ -133,7 +133,8 @@ if ( run.local == TRUE ) {
   scen.params = tidyr::expand_grid(
     
     #rep.methods = "gold ; CC ; MICE-std ; Am-std ; MICE-ours ; MICE-ours-pred ; Am-ours",
-    rep.methods = "gold ; MVN-CC-ours ; Am-ours", 
+    #rep.methods = "gold ; MVN-CC-ours ; Am-ours", 
+    rep.methods = "gold ; MICE-std ; MICE-ours",
     
     model = "OLS",
     coef_of_interest = "(Intercept)",
@@ -143,7 +144,8 @@ if ( run.local == TRUE ) {
     # as on cluster
     imp_m = 5,  # CURRENTLY SET LOW
     imp_maxit = 100,
-    mice_method = "norm", 
+    mice_method = NA, # use NA if you want mice's defaults
+    #mice_method = "norm", 
     
     # # for quicker sims
     # imp_m = 5,
@@ -151,7 +153,7 @@ if ( run.local == TRUE ) {
     # N = c(100),
     
     #dag_name = c( "1B", "1D", "1G", "1H" ),
-    dag_name = "1B"
+    dag_name = "3A"
   )
   
   
@@ -180,8 +182,11 @@ if ( run.local == TRUE ) {
   #   dag_name = "1B"
   # )
   # remove combos that aren't implemented
+  # DAGs where intercept is NOT implemented:
   scen.params = scen.params %>% filter( !(dag_name %in% c("1G", "1H", "1F") &
                                             coef_of_interest == "(Intercept)") )
+  # DAGs where ONLY intercept is implemented:
+  scen.params = scen.params %>% filter( !(dag_name %in% c("3") & coef_of_interest != "(Intercept)") )
   
   start.at = 1  # scen name to start at
   scen.params$scen = start.at:( nrow(scen.params) + start.at - 1 )
@@ -245,6 +250,10 @@ for ( scen in scens_to_run ) {
       p = scen.params[ scen.params$scen == scen, names(scen.params) != "scen"]
       coef_of_interest = p$coef_of_interest
       
+      # if mice_method was left unspecified in scen params (NA), use NULL to go with mice defaults
+      mice_method = p$mice_method
+      if ( is.na(mice_method) ) mice_method = NULL
+      
       # show beginning of dataset
       if ( i == 1 & verbose == TRUE) cat("\n\nDIM AND HEAD OF P (SINGLE ROW OF SCEN.PARAMS):\n")
       
@@ -292,11 +301,12 @@ for ( scen in scens_to_run ) {
       
       
       # ~~ MVN-CC-std ----
+      # imputation with imputation model trained only on complete cases
       # don't run for DAG 1J because it has no CCs by design
       if ( "MVN-CC-std" %in% all.methods & !is.null(di_std) & p$dag_name != "1J" ) {
         
         imps_mvn_cc_std = impute_mvn_cc( di_std,
-                              m = p$imp_m )
+                                         m = p$imp_m )
         
         # sanity check
         imp1 = imps_mvn_cc_std[[1]]
@@ -312,10 +322,12 @@ for ( scen in scens_to_run ) {
       
       
       # ~~ MVN-CC-ours ----
+      # imputation with imputation model trained only on complete cases
+    
       if ( "MVN-CC-ours" %in% all.methods & !is.null(di_ours) & p$dag_name != "1J" ) {
         
         imps_mvn_cc_ours = impute_mvn_cc( di_ours,
-                                     m = p$imp_m )
+                                          m = p$imp_m )
         
         # sanity check
         imp1 = imps_mvn_cc_std[[1]]
@@ -339,7 +351,7 @@ for ( scen in scens_to_run ) {
         imps_mice_std = mice( di_std,
                               maxit = p$imp_maxit,
                               m = p$imp_m,
-                              method = p$mice_method,
+                              method = mice_method,
                               printFlag = FALSE )
         
         # sanity check
@@ -363,7 +375,7 @@ for ( scen in scens_to_run ) {
         imps_mice_ours = mice( di_ours,
                                maxit = p$imp_maxit,
                                m = p$imp_m,
-                               method = p$mice_method,
+                               method = mice_method,
                                printFlag = FALSE )
         
         # sanity check
@@ -392,7 +404,7 @@ for ( scen in scens_to_run ) {
                                     predictorMatrix = pred,
                                     maxit = p$imp_maxit,
                                     m = p$imp_m,
-                                    method = p$mice_method,
+                                    method = mice_method,
                                     printFlag = FALSE )
         
         # for later sanity checks
@@ -724,7 +736,7 @@ if ( run.local == TRUE ) {
   
   as.data.frame(t)
   
-
+  
   
   setwd(data.dir)
   fwrite( rs_all_scens,

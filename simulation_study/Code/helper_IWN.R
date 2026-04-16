@@ -716,6 +716,206 @@ sim_data = function(.p) {
   }  # end of .p$dag_name == "1K"
   
   
+  # ~~~~ 2026-04-15 - New DAGs for AUD version of paper: benign MNAR
+
+  
+  # ~ ***DAG 2A (= DAG (xxx) in paper) -----------------------------
+  # A1 -> B (complete) -> RA and separately C -> RC 
+  
+  if ( .p$dag_name == "2A" ) {
+    du = data.frame( C1 = rnorm( n = .p$N ) )  
+    
+    coef1 = 2
+    
+    du = du %>% rowwise() %>%
+      mutate( A1 = rnorm( n = 1,
+                          mean = 0 ),
+              
+              B1 = rnorm( n = 1,
+                          mean = coef1*A1 ),
+              
+              RA = rbinom( n = 1,
+                           prob = expit(1*B1),
+                           size = 1 ),
+              
+              RC = rbinom( n = 1,
+                           prob = expit(1*C1),
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = B1,
+              C = ifelse(RC == 0, NA, C1))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(B, C, A)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      # regression strings
+      form_string = "A ~ 1"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "A1 ~ 1"
+      
+      beta = 0
+      
+      di_ours = du %>% select(A, B) 
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "C"
+    }
+    
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      
+      # regression strings
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      di_ours = NULL  # m-backdoor violated
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "C" 
+    }
+    
+  }  # end of .p$dag_name == "2A"
+  
+  
+  # ~ ***DAG 2B (= DAG (xxx) in paper) -----------------------------
+  # A1 -> B (complete) -> RA and B -> C -> RC 
+  # (same as 2A, but now has B->C)
+  
+  if ( .p$dag_name == "2B" ) {
+    du = data.frame( A1 = rnorm( n = .p$N,
+                                 mean = 0 ) )  
+    
+    coef1 = 2
+    
+    du = du %>% rowwise() %>%
+      mutate( B1 = rnorm( n = 1,
+                          mean = coef1*A1 ),
+              
+              C1 = rnorm( n = 1,
+                          mean = coef1*B1 ),
+              
+              RA = rbinom( n = 1,
+                           prob = expit(1*B1),
+                           size = 1 ),
+              
+              RC = rbinom( n = 1,
+                           prob = expit(1*C1),
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              B = B1,
+              C = ifelse(RC == 0, NA, C1))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(B, C, A)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      # regression strings
+      form_string = "A ~ 1"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "A1 ~ 1"
+      
+      beta = 0
+      
+      di_ours = du %>% select(A, B) 
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "C"
+    }
+    
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      
+      # regression strings
+      form_string = "B ~ A"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "B1 ~ A1"
+      
+      beta = coef1
+      
+      di_ours = NULL  # m-backdoor violated
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "C" 
+    }
+    
+  }  # end of .p$dag_name == "2B"
+  
+  
+  
+  # ~ ***DAG 3A (= DAG (xxx) in paper) -----------------------------
+  # A1 -> RC; RA and RC are completely isolated. There is no B. (Intercept-only.) 
+  
+  if ( .p$dag_name == "3A" ) {
+    du = data.frame( Z = rnorm( n = .p$N,
+                                mean = 0 ), # fake variable; mice requires data to have at least 2 cols
+                     
+                    A1 = rbinom( n = .p$N,
+                                  prob = 0.5,
+                                  size = 1 ),
+                     
+                     C1 = rnorm( n = .p$N,
+                                 mean = 0 ),
+                     
+                     RA = rbinom( n = .p$N,
+                                  prob = 0.5,
+                                  size = 1 ) )  
+    
+    coef1 = 2
+    
+    du = du %>% rowwise() %>%
+      mutate( RC = rbinom( n = 1,
+                           prob = 0.2 + 0.4*A1,
+                           size = 1 ),
+              
+              A = ifelse(RA == 0, NA, A1),
+              C = ifelse(RC == 0, NA, C1))
+    
+    # make dataset for imputation (standard way: all measured variables)
+    di_std = du %>% select(A, C, Z)
+    
+    
+    ### For just the intercept of A
+    if ( .p$coef_of_interest == "(Intercept)" ){ 
+      # regression strings
+      form_string = "A ~ 1"
+      
+      # gold-standard model uses underlying variables
+      gold_form_string = "A1 ~ 1"
+      
+      beta = NULL
+      
+      di_ours = du %>% select(A, Z) 
+      
+      # custom predictor matrix for MICE-ours-pred
+      exclude_from_imp_model = "C"
+    }
+    
+    
+    ### For the A-B association
+    if ( .p$coef_of_interest == "A" ){ 
+      
+    stop("Coefficient A isn't implemented for DAG 3 because there is no outcome.")
+    }
+    
+  }  # end of .p$dag_name == "3"
+  
+  
   
   
   # ~ Finish generating data ----------------
