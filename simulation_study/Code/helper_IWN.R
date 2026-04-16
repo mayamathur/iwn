@@ -980,8 +980,11 @@ fit_regression = function(form_string,
   
   #if ( miss_method %in% c("CC", "IPW") ) dat = dm
   if ( miss_method == "MI" ) dat = imps
-  if ( miss_method %in% c("gold", "CC") ) dat = du
+  #if ( miss_method %in% c("gold", "CC") ) dat = du  # means that CC method uses complete cases wrt the analysis vars that are in the model, but not wrt ALL variables
+  if ( miss_method == "gold" ) dat = du
+  if ( miss_method == "CC" ) dat = du |> tidyr::drop_na()  # means CC method uses complete case wrt EVERYTHING in the dataset, not just analysis vars
   
+    
   # ~ CC and gold std  ---------------------
   if ( miss_method %in% c("CC", "gold") ) {
     

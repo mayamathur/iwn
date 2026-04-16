@@ -134,7 +134,7 @@ if ( run.local == TRUE ) {
     
     #rep.methods = "gold ; CC ; MICE-std ; Am-std ; MICE-ours ; MICE-ours-pred ; Am-ours",
     #rep.methods = "gold ; MVN-CC-ours ; Am-ours", 
-    rep.methods = "gold ; MICE-std ; MICE-ours",
+    rep.methods = "gold ; CC ; MICE-std ; MICE-ours",
     
     model = "OLS",
     coef_of_interest = "(Intercept)",
@@ -497,7 +497,8 @@ for ( scen in scens_to_run ) {
       if (run.local == TRUE) srr(rep.res)
       
       
-      # ~~ Complete-case analysis (naive) ----
+      # ~~ CC ----
+      # plain-vanilla complete-case analysis
       if ( "CC" %in% all.methods ) {
         rep.res = run_method_safe(method.label = c("CC"),
                                   
