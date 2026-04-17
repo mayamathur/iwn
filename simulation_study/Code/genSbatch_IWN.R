@@ -32,44 +32,41 @@ lapply( allPackages,
 # SET SIMULATION PARAMETERS -----------------------------------------
 
 # # ISOLATE SCENS
-# scen.params = tidyr::expand_grid(
-# 
-#   #rep.methods = "gold ; CC ; MICE-std ; Am-std ; MICE-ours ; MICE-ours-pred ; Am-ours",
-#   #rep.methods = "gold ; CC ; MVN-CC-std ; MVN-CC-ours ; MICE-std ; MICE-ours ; Am-std ; Am-ours",
-#   rep.methods = "gold ; MVN-CC-ours ; Am-ours",
-# 
-#   model = "OLS",
-#   coef_of_interest = c( "(Intercept)"),  # "(Intercept)" or "A"
-# 
-#   imp_m = 50,
-#   imp_maxit = 200,
-#   mice_method = c("pmm"),
-# 
-#   dag_name = c("1B"),
-#   N = c(1000)
-# )
 
 
-# FULL SIMS
 scen.params = tidyr::expand_grid(
-
+  
   #rep.methods = "gold ; CC ; MICE-std ; Am-std ; MICE-ours ; MICE-ours-pred ; Am-ours",
-  rep.methods = "gold ; CC ; MVN-CC-std ; MVN-CC-ours ; MICE-std ; MICE-ours ; Am-std ; Am-ours",
-
+  #rep.methods = "gold ; MVN-CC-ours ; Am-ours", 
+  rep.methods = "gold ; CC ; MICE-std ; MICE-ours ; MVN-CC-std ; MVN-CC-ours",
+  
   model = "OLS",
-  coef_of_interest = c( "(Intercept)", "A"),  # "(Intercept)" or "A"
-
-  imp_m = 50,
-  imp_maxit = 200,
-  mice_method = c("pmm"),
-
-  dag_name = c( "1B", "1D", "1Fb", "1J" ),
-  N = c(1000)
+  coef_of_interest = c( "(Intercept)", "A" ),
+  N = c(1000),
+  
+  # MICE parameters
+  # as on cluster
+  imp_m = 5,  # CURRENTLY SET LOW
+  imp_maxit = 100,
+  mice_method = NA, # use NA if you want mice's defaults
+  #mice_method = "norm", 
+  
+  # # for quicker sims
+  # imp_m = 5,
+  # imp_maxit = 5,
+  # N = c(100),
+  
+  #dag_name = c( "1B", "1D", "1G", "1H" ),
+  dag_name = c( "3A", "2A", "2B" )
 )
 
 # remove combos that aren't implemented
-scen.params = scen.params %>% filter( !(dag_name %in% c("1G", "1H", "1F", "1J") &
+# DAGs where intercept is NOT implemented:
+scen.params = scen.params %>% filter( !(dag_name %in% c("1G", "1H", "1F") &
                                           coef_of_interest == "(Intercept)") )
+# DAGs where ONLY intercept is implemented:
+scen.params = scen.params %>% filter( !(dag_name %in% c("3A") & coef_of_interest != "(Intercept)") )
+
 # add scen numbers
 start.at = 1
 scen.params = scen.params %>% add_column( scen = start.at : ( nrow(scen.params) + (start.at - 1) ),
@@ -91,7 +88,7 @@ write.csv( scen.params, "scen_params.csv", row.names = FALSE )
 source("helper_IWN.R")
 
 # number of sbatches to generate (i.e., iterations within each scenario)
-n.reps.per.scen = 5000  
+n.reps.per.scen = 500  
 n.reps.in.doParallel = 100
 ( n.files = ( n.reps.per.scen / n.reps.in.doParallel ) * n.scen )
 
@@ -133,7 +130,7 @@ n.files
 
 path = "/home/groups/manishad/IWN"
 setwd( paste(path, "/sbatch_files", sep="") )
-for (i in 1:350) {
+for (i in 1:25) {
   system( paste("sbatch -p qsu,owners,normal /home/groups/manishad/IWN/sbatch_files/", i, ".sbatch", sep="") )
 }
 

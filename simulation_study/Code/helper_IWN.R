@@ -720,7 +720,7 @@ sim_data = function(.p) {
 
   
   # ~ ***DAG 2A (= DAG (xxx) in paper) -----------------------------
-  # A1 -> B (complete) -> RA and separately C -> RC 
+  # RB <- A (complete) -> B1 and separately C1 -> RC 
   
   if ( .p$dag_name == "2A" ) {
     du = data.frame( C1 = rnorm( n = .p$N ) )  
@@ -734,16 +734,16 @@ sim_data = function(.p) {
               B1 = rnorm( n = 1,
                           mean = coef1*A1 ),
               
-              RA = rbinom( n = 1,
-                           prob = expit(1*B1),
+              RB = rbinom( n = 1,
+                           prob = expit(1*A1),
                            size = 1 ),
               
               RC = rbinom( n = 1,
                            prob = expit(1*C1),
                            size = 1 ),
               
-              A = ifelse(RA == 0, NA, A1),
-              B = B1,
+              A = A1,
+              B = ifelse(RB == 0, NA, B1),
               C = ifelse(RC == 0, NA, C1))
     
     # make dataset for imputation (standard way: all measured variables)
@@ -788,8 +788,8 @@ sim_data = function(.p) {
   
   
   # ~ ***DAG 2B (= DAG (xxx) in paper) -----------------------------
-  # A1 -> B (complete) -> RA and B -> C -> RC 
-  # (same as 2A, but now has B->C)
+  # RB <- A (complete) -> B1 -> C1 -> RC 
+  # (same as 2A, but now has B1->C1)
   
   if ( .p$dag_name == "2B" ) {
     du = data.frame( A1 = rnorm( n = .p$N,
@@ -804,16 +804,16 @@ sim_data = function(.p) {
               C1 = rnorm( n = 1,
                           mean = coef1*B1 ),
               
-              RA = rbinom( n = 1,
-                           prob = expit(1*B1),
+              RB = rbinom( n = 1,
+                           prob = expit(1*A1),
                            size = 1 ),
               
               RC = rbinom( n = 1,
                            prob = expit(1*C1),
                            size = 1 ),
               
-              A = ifelse(RA == 0, NA, A1),
-              B = B1,
+              A = A1,
+              B = ifelse(RB == 0, NA, B1),
               C = ifelse(RC == 0, NA, C1))
     
     # make dataset for imputation (standard way: all measured variables)
@@ -898,7 +898,7 @@ sim_data = function(.p) {
       # gold-standard model uses underlying variables
       gold_form_string = "A1 ~ 1"
       
-      beta = NULL
+      beta = NA
       
       di_ours = du %>% select(A, Z) 
       

@@ -134,10 +134,10 @@ if ( run.local == TRUE ) {
     
     #rep.methods = "gold ; CC ; MICE-std ; Am-std ; MICE-ours ; MICE-ours-pred ; Am-ours",
     #rep.methods = "gold ; MVN-CC-ours ; Am-ours", 
-    rep.methods = "gold ; CC ; MICE-std ; MICE-ours",
+    rep.methods = "gold ; CC ; MICE-std ; MICE-ours ; MVN-CC-std ; MVN-CC-ours",
     
     model = "OLS",
-    coef_of_interest = "(Intercept)",
+    coef_of_interest = c( "(Intercept)", "A" ),
     N = c(1000),
     
     # MICE parameters
@@ -153,7 +153,7 @@ if ( run.local == TRUE ) {
     # N = c(100),
     
     #dag_name = c( "1B", "1D", "1G", "1H" ),
-    dag_name = "3A"
+    dag_name = "2A"
   )
   
   
@@ -186,7 +186,7 @@ if ( run.local == TRUE ) {
   scen.params = scen.params %>% filter( !(dag_name %in% c("1G", "1H", "1F") &
                                             coef_of_interest == "(Intercept)") )
   # DAGs where ONLY intercept is implemented:
-  scen.params = scen.params %>% filter( !(dag_name %in% c("3") & coef_of_interest != "(Intercept)") )
+  scen.params = scen.params %>% filter( !(dag_name %in% c("3A") & coef_of_interest != "(Intercept)") )
   
   start.at = 1  # scen name to start at
   scen.params$scen = start.at:( nrow(scen.params) + start.at - 1 )
@@ -208,7 +208,7 @@ if ( run.local == TRUE ) {
 # RUN SIMULATION ------------------------------
 
 # set local sim.reps
-if (run.local == TRUE) sim.reps = 500 
+if (run.local == TRUE) sim.reps = 1 
 
 
 # mimic Sherlock structure
@@ -498,7 +498,7 @@ for ( scen in scens_to_run ) {
       
       
       # ~~ CC ----
-      # plain-vanilla complete-case analysis
+      # complete-case analysis wrt ALL vars in di_std, not just analysis vars
       if ( "CC" %in% all.methods ) {
         rep.res = run_method_safe(method.label = c("CC"),
                                   

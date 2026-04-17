@@ -34,7 +34,7 @@ nano /home/groups/manishad/IWN/sim_results/overall_stitched/sti*
 # CODE -> SHERLOCK ----------------------------------
 
 # push all Sherlock code
-scp /Users/mmathur/Dropbox/Personal\ computer/Independent\ studies/2023/\*IWN\ \(Imputation\ without\ nightMARs\)/Linked\ to\ OSF\ \(IWN\)/Simulation\ study/Code/* mmathur@login.sherlock.stanford.edu:/home/groups/manishad/IWN
+scp /Users/mmathur/Dropbox/Personal\ computer/Independent\ studies/2023/\*IWN\ \(Imputation\ without\ nightMARs\)/Linked\ to\ git\ \(IWN\)/simulation_study/Code/* mmathur@login.sherlock.stanford.edu:/home/groups/manishad/IWN
 
 
 
